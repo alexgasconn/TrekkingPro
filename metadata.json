@@ -1,0 +1,5 @@
+{
+  "name": "TrekkingTime Pro",
+  "description": "Advanced hiking time calculator based on GPX files. Uses Naismith's Rule, Tobler's function, and Munter corrections to estimate route duration, featuring maps and slope-aware elevation profiles.",
+  "requestFramePermissions": []
+}
