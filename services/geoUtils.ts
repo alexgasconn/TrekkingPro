@@ -23,7 +23,7 @@ export const parseGPX = (gpxContent: string): RouteStats => {
   const trkpts = Array.from(xmlDoc.querySelectorAll("trkpt"));
 
   if (trkpts.length === 0) {
-    throw new Error("No se encontraron puntos de ruta (trkpt) en el archivo GPX.");
+    throw new Error("No track points (trkpt) found in the GPX file.");
   }
 
   let totalDistance = 0;
@@ -33,6 +33,14 @@ export const parseGPX = (gpxContent: string): RouteStats => {
   let minElevation = Infinity;
   let totalSlopeAccumulator = 0;
   let slopeCount = 0;
+
+  const slopeDist = {
+    flat: 0,
+    mild: 0,
+    moderate: 0,
+    steep: 0,
+    extreme: 0
+  };
 
   const points: GPXPoint[] = [];
 
@@ -54,7 +62,7 @@ export const parseGPX = (gpxContent: string): RouteStats => {
 
       const eleDiff = ele - prev.ele;
       
-      // Filter small noise in elevation data (threshold 1 meter)
+      // Filter small noise in elevation data (threshold 0.5 meter)
       if (Math.abs(eleDiff) > 0.5) {
           if (eleDiff > 0) {
             elevationGain += eleDiff;
@@ -65,9 +73,19 @@ export const parseGPX = (gpxContent: string): RouteStats => {
 
       // Calculate slope for this segment
       if (distFromPrev > 0.001) { // avoid division by zero
-        const slope = (eleDiff / (distFromPrev * 1000)); // rise / run
-        totalSlopeAccumulator += Math.abs(slope);
+        const slopeVal = Math.abs((eleDiff / (distFromPrev * 1000)) * 100); // percentage
+        totalSlopeAccumulator += slopeVal;
         slopeCount++;
+
+        // Categorize terrain by slope
+        if (slopeVal < 2) slopeDist.flat += distFromPrev;
+        else if (slopeVal < 8) slopeDist.mild += distFromPrev;
+        else if (slopeVal < 15) slopeDist.moderate += distFromPrev;
+        else if (slopeVal < 25) slopeDist.steep += distFromPrev;
+        else slopeDist.extreme += distFromPrev;
+      } else {
+        // If distance is tiny, assume flat/continuity
+        slopeDist.flat += distFromPrev;
       }
     }
 
@@ -85,7 +103,14 @@ export const parseGPX = (gpxContent: string): RouteStats => {
     elevationLoss: Math.round(elevationLoss),
     maxElevation: Math.round(maxElevation),
     minElevation: Math.round(minElevation),
-    avgSlope: slopeCount > 0 ? (totalSlopeAccumulator / slopeCount) * 100 : 0,
+    avgSlope: slopeCount > 0 ? (totalSlopeAccumulator / slopeCount) : 0,
     points,
+    slopeBreakdown: {
+      flat: parseFloat(slopeDist.flat.toFixed(2)),
+      mild: parseFloat(slopeDist.mild.toFixed(2)),
+      moderate: parseFloat(slopeDist.moderate.toFixed(2)),
+      steep: parseFloat(slopeDist.steep.toFixed(2)),
+      extreme: parseFloat(slopeDist.extreme.toFixed(2)),
+    }
   };
 };

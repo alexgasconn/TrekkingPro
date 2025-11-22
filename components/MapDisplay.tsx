@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, useMap, Marker, Popup, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import { GPXPoint } from '../types';
 
@@ -19,7 +19,9 @@ const RecenterMap = ({ positions }: { positions: [number, number][] }) => {
   useEffect(() => {
     if (positions.length > 0) {
       const bounds = L.latLngBounds(positions);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      // Invalidate size is crucial when map container might have changed size or initialized hidden
+      map.invalidateSize();
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
     }
   }, [positions, map]);
   return null;
@@ -40,17 +42,43 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ points }) => {
   const endPos = positions[positions.length - 1];
 
   return (
-    <div className="h-[400px] w-full rounded-lg overflow-hidden shadow-md border border-slate-200 z-0 relative">
+    <div className="h-[450px] w-full rounded-lg overflow-hidden shadow-md border border-slate-200 z-0 relative">
       <MapContainer 
         center={startPos} 
         zoom={13} 
         scrollWheelZoom={false} 
         style={{ height: "100%", width: "100%" }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-          url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
-        />
+        <LayersControl position="topright">
+            <LayersControl.BaseLayer checked name="OpenTopoMap (Topographic)">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
+                  url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+                />
+            </LayersControl.BaseLayer>
+            
+            <LayersControl.BaseLayer name="OpenStreetMap (Standard)">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+            </LayersControl.BaseLayer>
+
+            <LayersControl.BaseLayer name="CyclOSM (Paths/Trails)">
+                 <TileLayer
+                    attribution='&copy; <a href="https://github.com/cyclosm/cyclosm-cartocss-style/releases">CyclOSM</a> | ODbL'
+                    url="https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png"
+                />
+            </LayersControl.BaseLayer>
+
+             <LayersControl.BaseLayer name="Esri World Imagery (Satellite)">
+                <TileLayer
+                    attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                />
+            </LayersControl.BaseLayer>
+        </LayersControl>
+
         <Polyline 
             positions={positions} 
             pathOptions={{ color: '#ef4444', weight: 4 }} 
