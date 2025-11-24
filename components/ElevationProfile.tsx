@@ -1,95 +1,137 @@
-import React, { useState, useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+import React, { useMemo } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot } from 'recharts';
 import { GPXPoint } from '../types';
-import { calculateDistance } from '../services/geoUtils';
 import { Activity } from 'lucide-react';
 
 interface ElevationProfileProps {
-  points: GPXPoint[];
+  rawPoints: GPXPoint[]; // Needed for global Min/Max calculation stability
+  smoothedPoints: GPXPoint[]; // The data to display
+  smoothingLevel: number;
+  setSmoothingLevel: (l: number) => void;
+  hoveredPoint: GPXPoint | null;
+  onHoverPoint: (point: GPXPoint | null) => void;
 }
 
-const ElevationProfile: React.FC<ElevationProfileProps> = ({ points }) => {
-  const [isSmoothed, setIsSmoothed] = useState(false);
+// Refined "Matte" Gradient - Less Rainbow, more Heatmap style
+// Blue (Down) -> Green (Flat) -> Red (Up)
+const colorStops = [
+    { val: -15, color: [59, 130, 246] },   // Blue 500 (Steep Down)
+    { val: -5,  color: [96, 165, 250] },   // Blue 400 (Mild Down)
+    { val: 0,   color: [16, 185, 129] },   // Emerald 500 (Flat)
+    { val: 5,   color: [251, 146, 60] },   // Orange 400 (Mild Up)
+    { val: 15,  color: [239, 68, 68] }     // Red 500 (Steep Up)
+];
 
-  // Prepare data with slope calculation for the gradient
-  const processedData = useMemo(() => {
-    // Downsample for performance
-    const targetPoints = 300;
-    const step = Math.ceil(points.length / targetPoints);
-    
-    return points.filter((_, i) => i % step === 0).map((p, i, arr) => {
-      let slope = 0;
-      if (i > 0) {
-        const prev = arr[i-1];
-        const dist = calculateDistance(prev.lat, prev.lon, p.lat, p.lon);
-        const eleDiff = p.ele - prev.ele;
-        if (dist > 0) {
-          slope = (eleDiff / (dist * 1000)) * 100; // Percentage
+const interpolateColor = (slope: number): string => {
+    const s = Math.max(-20, Math.min(20, slope));
+
+    let lower = colorStops[0];
+    let upper = colorStops[colorStops.length - 1];
+
+    for (let i = 0; i < colorStops.length - 1; i++) {
+        if (s >= colorStops[i].val && s <= colorStops[i+1].val) {
+            lower = colorStops[i];
+            upper = colorStops[i+1];
+            break;
         }
-      }
-      return { ...p, calculatedSlope: slope };
-    });
-  }, [points]);
+    }
 
-  // Smooth data using simple moving average
-  const chartData = useMemo(() => {
-    if (!isSmoothed) return processedData;
+    if (lower.val === upper.val) return `rgb(${lower.color.join(',')})`;
 
-    const windowSize = 5; // Smoothing window
-    return processedData.map((point, idx, arr) => {
-        const start = Math.max(0, idx - Math.floor(windowSize / 2));
-        const end = Math.min(arr.length, idx + Math.floor(windowSize / 2) + 1);
-        const subset = arr.slice(start, end);
-        const avgEle = subset.reduce((sum, p) => sum + p.ele, 0) / subset.length;
-        const avgSlope = subset.reduce((sum, p) => sum + p.calculatedSlope, 0) / subset.length;
-        
-        return { ...point, ele: avgEle, calculatedSlope: avgSlope };
+    const t = (s - lower.val) / (upper.val - lower.val);
+
+    const r = Math.round(lower.color[0] + (upper.color[0] - lower.color[0]) * t);
+    const g = Math.round(lower.color[1] + (upper.color[1] - lower.color[1]) * t);
+    const b = Math.round(lower.color[2] + (upper.color[2] - lower.color[2]) * t);
+
+    return `rgb(${r}, ${g}, ${b})`;
+};
+
+const ElevationProfile: React.FC<ElevationProfileProps> = ({ 
+    rawPoints, 
+    smoothedPoints, 
+    smoothingLevel, 
+    setSmoothingLevel, 
+    hoveredPoint, 
+    onHoverPoint 
+}) => {
+  
+  // Calculate fixed Y-axis domain based on RAW data so the chart frame doesn't jump
+  const { minEle, maxEle } = useMemo(() => {
+    if (rawPoints.length === 0) return { minEle: 0, maxEle: 100 };
+    let min = Infinity;
+    let max = -Infinity;
+    rawPoints.forEach(p => {
+      if (p.ele < min) min = p.ele;
+      if (p.ele > max) max = p.ele;
     });
-  }, [processedData, isSmoothed]);
+    return { minEle: Math.floor(min - 20), maxEle: Math.ceil(max + 20) };
+  }, [rawPoints]);
 
   const gradientId = "slopeGradient";
 
+  const getSmoothingLabel = () => {
+    if (smoothingLevel === 0) return "Raw";
+    if (smoothingLevel === 1) return "Low";
+    if (smoothingLevel === 2) return "Med";
+    if (smoothingLevel === 3) return "High";
+    return "Max";
+  };
+
+  const cycleSmoothing = () => {
+    setSmoothingLevel((smoothingLevel + 1) % 5);
+  };
+
   return (
-    <div className="w-full h-72 bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex flex-col">
+    <div className="w-full h-[400px] bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex flex-col transition-all">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-sm font-semibold text-slate-500">Elevation Profile & Gradient</h3>
         
         <div className="flex items-center space-x-4">
              <button 
-                onClick={() => setIsSmoothed(!isSmoothed)}
-                className={`flex items-center space-x-1 text-xs px-2 py-1 rounded transition-colors ${isSmoothed ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                onClick={cycleSmoothing}
+                className={`flex items-center space-x-1 text-xs px-2 py-1 rounded transition-colors ${smoothingLevel > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
              >
                 <Activity size={12} />
-                <span>{isSmoothed ? 'Smoothed' : 'Raw Data'}</span>
+                <span>Smooth: {getSmoothingLabel()}</span>
              </button>
 
-            <div className="flex space-x-2 text-[10px] text-slate-400 hidden sm:flex">
-                <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-400 mr-1"></span>Flat</span>
-                <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-blue-400 mr-1"></span>Mild</span>
-                <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-yellow-400 mr-1"></span>Mod</span>
-                <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-red-500 mr-1"></span>Steep</span>
+            {/* Legend */}
+            <div className="flex space-x-3 text-[9px] text-slate-400 hidden lg:flex items-center">
+                <div className="flex items-center space-x-1 border-r border-slate-200 pr-3 mr-1">
+                    <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-blue-500 mr-1"></span>Descend</span>
+                    <span className="text-[9px] font-bold text-slate-300 ml-1">DOWN</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                    <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-1"></span>Flat</span>
+                </div>
+                <div className="flex items-center space-x-1 border-l border-slate-200 pl-3 ml-1">
+                     <span className="text-[9px] font-bold text-slate-300 mr-1">UP</span>
+                    <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-orange-400 mr-1"></span>Climb</span>
+                    <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-red-500 mr-1"></span>Steep</span>
+                </div>
             </div>
         </div>
       </div>
       
-      <div className="flex-grow min-h-0">
+      <div className="flex-grow min-h-0" onMouseLeave={() => onHoverPoint(null)}>
         <ResponsiveContainer width="100%" height="100%">
             <AreaChart
-            data={chartData}
+            data={smoothedPoints}
             margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+            onMouseMove={(state) => {
+                if (state.isTooltipActive && state.activePayload && state.activePayload.length > 0) {
+                    const point = state.activePayload[0].payload as GPXPoint;
+                    onHoverPoint(point);
+                }
+            }}
             >
             <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-                {chartData.map((entry, index) => {
-                    const offset = (index / (chartData.length - 1)) * 100;
-                    let color = "#3b82f6"; // Default Blue (Mild)
-                    
-                    const s = entry.calculatedSlope;
-                    if (s < 2) color = "#34d399"; // Emerald (Flat/Down)
-                    else if (s >= 2 && s < 8) color = "#60a5fa"; // Blue (Gentle)
-                    else if (s >= 8 && s < 15) color = "#facc15"; // Yellow (Moderate)
-                    else if (s >= 15) color = "#ef4444"; // Red (Steep)
-
+                {smoothedPoints.map((entry, index) => {
+                    const offset = (index / (smoothedPoints.length - 1)) * 100;
+                    const color = interpolateColor(entry.slope || 0);
                     return <stop key={index} offset={`${offset}%`} stopColor={color} />;
                 })}
                 </linearGradient>
@@ -102,15 +144,16 @@ const ElevationProfile: React.FC<ElevationProfileProps> = ({ points }) => {
                 tick={{fontSize: 12}} 
                 tickFormatter={(val) => val.toFixed(1)}
                 interval="preserveStartEnd"
+                minTickGap={30}
             />
             <YAxis 
-                domain={['dataMin - 20', 'dataMax + 20']} 
+                domain={[minEle, maxEle]} 
                 unit="m" 
-                tick={{fontSize: 12}} 
-                width={40}
+                tick={{fontSize: 11}} 
+                width={60}
             />
             <Tooltip 
-                formatter={(value: number, name: string, props: any) => {
+                formatter={(value: number, name: string) => {
                     if (name === "ele") return [`${Math.round(value)} m`, 'Elevation'];
                     return [value, name];
                 }}
@@ -118,13 +161,23 @@ const ElevationProfile: React.FC<ElevationProfileProps> = ({ points }) => {
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
-                        const dataPoint = payload[0].payload;
+                        const dataPoint = payload[0].payload as GPXPoint;
+                        const slope = dataPoint.slope || 0;
+                        let slopeText = "Flat";
+                        let slopeColor = "text-emerald-500";
+                        
+                        if (slope >= 2) { slopeText = "Uphill"; slopeColor = "text-orange-500"; }
+                        if (slope >= 15) { slopeText = "Steep Uphill"; slopeColor = "text-red-500"; }
+                        
+                        if (slope <= -2) { slopeText = "Downhill"; slopeColor = "text-blue-400"; }
+                        if (slope <= -15) { slopeText = "Steep Descent"; slopeColor = "text-blue-600"; }
+
                         return (
                             <div className="bg-white p-3 border border-slate-100 shadow-lg rounded-lg text-xs">
                                 <p className="font-bold text-slate-700 mb-1">Km {Number(label).toFixed(2)}</p>
-                                <p className="text-blue-600">Elevation: {Math.round(dataPoint.ele)} m</p>
-                                <p className={`font-semibold ${dataPoint.calculatedSlope > 15 ? 'text-red-500' : 'text-slate-500'}`}>
-                                    Grade: {dataPoint.calculatedSlope.toFixed(1)}%
+                                <p className="text-blue-600 font-mono">Alt: {Math.round(dataPoint.ele)} m</p>
+                                <p className={`font-semibold ${slopeColor}`}>
+                                    {slope > 0 ? '+' : ''}{slope.toFixed(1)}% ({slopeText})
                                 </p>
                             </div>
                         );
@@ -132,14 +185,22 @@ const ElevationProfile: React.FC<ElevationProfileProps> = ({ points }) => {
                     return null;
                 }}
             />
+            
+            {hoveredPoint && (
+                <ReferenceLine x={hoveredPoint.distFromStart} stroke="#ef4444" strokeDasharray="3 3" />
+            )}
+            {hoveredPoint && (
+                 <ReferenceDot x={hoveredPoint.distFromStart} y={hoveredPoint.ele} r={4} fill="#ef4444" stroke="white" />
+            )}
+
             <Area 
                 type="monotone" 
                 dataKey="ele" 
                 stroke="url(#slopeGradient)" 
                 fill="url(#slopeGradient)" 
-                fillOpacity={0.4}
+                fillOpacity={0.6}
                 strokeWidth={2}
-                animationDuration={500}
+                animationDuration={300}
             />
             </AreaChart>
         </ResponsiveContainer>

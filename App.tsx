@@ -1,21 +1,21 @@
 
-import React, { useState, useEffect } from 'react';
-import { Upload, Clock, Settings, AlertCircle, Calculator, CloudSun, Calendar, Thermometer, Wind, Droplets, Trophy, Gauge, Cloud, Sun, Sunrise, Sunset, Eye, Zap, Waves, Flame, Droplet, AlertTriangle, Umbrella } from 'lucide-react';
-import { parseGPX } from './services/geoUtils';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Upload, Clock, Settings, AlertCircle, Calculator, CloudSun, Calendar, Thermometer, Wind, Droplets, Trophy, Gauge, Cloud, Sun, Sunrise, Sunset, Eye, Zap, Waves, Flame, Droplet, AlertTriangle, Umbrella, MapPin } from 'lucide-react';
+import { parseGPX, smoothGPXPoints, calculateSlopeBreakdown } from './services/geoUtils';
 import { 
   calculateNaismith, 
   calculateTobler, 
   calculateMunter, 
-  calculateSwiss,
-  calculatePetzoldt,
-  calculateSmartAggregate,
-  formatDuration,
-  calculateDifficulty,
-  calculateBioMetrics,
-  calculateSafety
+  calculateSwiss, 
+  calculatePetzoldt, 
+  calculateSmartAggregate, 
+  formatDuration, 
+  calculateDifficulty, 
+  calculateBioMetrics, 
+  calculateSafety 
 } from './services/calcService';
 import { fetchWeatherForecast } from './services/weatherService';
-import { RouteStats, FitnessLevel, PaceType, PackWeight, CalculationContext, TimeEstimation, DifficultyRating, WeatherData, SmartAggregate, BioMetrics, SafetyMetrics } from './types';
+import { RouteStats, FitnessLevel, PaceType, PackWeight, CalculationContext, TimeEstimation, DifficultyRating, WeatherData, SmartAggregate, BioMetrics, SafetyMetrics, GPXPoint, SlopeBreakdown } from './types';
 import StatsCards from './components/StatsCards';
 import MapDisplay from './components/MapDisplay';
 import ElevationProfile from './components/ElevationProfile';
@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [pace, setPace] = useState<PaceType>(PaceType.STEADY);
   const [weight, setWeight] = useState<PackWeight>(PackWeight.LIGHT);
   const [includeBreaks, setIncludeBreaks] = useState<boolean>(true);
+  const [smoothingLevel, setSmoothingLevel] = useState<number>(1); // Lifted state
   
   // Planning States
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -43,6 +44,8 @@ const App: React.FC = () => {
   const [bioMetrics, setBioMetrics] = useState<BioMetrics | null>(null);
   const [safety, setSafety] = useState<SafetyMetrics | null>(null);
   
+  const [hoveredPoint, setHoveredPoint] = useState<GPXPoint | null>(null);
+  
   const [error, setError] = useState<string | null>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,6 +60,8 @@ const App: React.FC = () => {
         setStats(parsedStats);
         setError(null);
         setWeather(null); // Reset weather on new upload
+        setHoveredPoint(null);
+        setSmoothingLevel(1); // Reset smoothing default
       } catch (err) {
         setError("Error reading GPX file. Please ensure it is a valid format.");
         console.error(err);
@@ -64,6 +69,16 @@ const App: React.FC = () => {
     };
     reader.readAsText(file);
   };
+
+  // Calculate Smoothed Data and Dynamic Slope Stats
+  const { smoothedPoints, currentSlopeBreakdown } = useMemo(() => {
+    if (!stats) return { smoothedPoints: [], currentSlopeBreakdown: null };
+    
+    const smoothed = smoothGPXPoints(stats.points, smoothingLevel);
+    const slopeStats = calculateSlopeBreakdown(smoothed, stats.totalDistance);
+    
+    return { smoothedPoints: smoothed, currentSlopeBreakdown: slopeStats };
+  }, [stats, smoothingLevel]);
 
   // Fetch Weather when stats or date changes
   useEffect(() => {
@@ -88,6 +103,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (stats) {
+      setDifficulty(calculateDifficulty(stats));
+
       const ctx: CalculationContext = { stats, fitness, pace, weight, includeBreaks };
       
       const results = [
@@ -101,7 +118,6 @@ const App: React.FC = () => {
       setEstimations(results);
       const agg = calculateSmartAggregate(results);
       setAggregate(agg);
-      setDifficulty(calculateDifficulty(stats.totalDistance, stats.elevationGain));
       
       // Calculate Bio & Safety
       setBioMetrics(calculateBioMetrics(ctx, agg.val, weather?.maxTemp));
@@ -293,11 +309,6 @@ const App: React.FC = () => {
                                     <span>Warning: Finish time is after sunset.</span>
                                 </div>
                             )}
-
-                            <div className="flex justify-center items-center space-x-1 mt-3 text-xs text-orange-300 bg-orange-900/30 py-1 px-2 rounded-full mx-auto w-fit print:hidden">
-                                <Calculator size={12} />
-                                <span>Based on {aggregate.type}</span>
-                            </div>
                         </div>
 
                         <div className="space-y-2 relative z-10 border-t border-slate-700 pt-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar print:border-slate-300">
@@ -327,42 +338,53 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Terrain Breakdown */}
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm print:break-inside-avoid">
-                   <h3 className="font-semibold text-slate-700 mb-4 text-sm uppercase tracking-wide">Terrain Slope Analysis</h3>
-                   <div className="space-y-3">
-                       {[
-                           { label: 'Flat (<2%)', color: 'bg-emerald-400', val: stats.slopeBreakdown.flat },
-                           { label: 'Mild (2-8%)', color: 'bg-blue-400', val: stats.slopeBreakdown.mild },
-                           { label: 'Mod. (8-15%)', color: 'bg-yellow-400', val: stats.slopeBreakdown.moderate },
-                           { label: 'Steep (15-25%)', color: 'bg-orange-500', val: stats.slopeBreakdown.steep },
-                           { label: 'Extreme (>25%)', color: 'bg-red-500', val: stats.slopeBreakdown.extreme },
-                       ].map((item, i) => {
-                           const pct = ((item.val / stats.totalDistance) * 100);
-                           return (
-                               <div key={i}>
-                                   <div className="flex justify-between text-xs mb-1">
-                                       <span className="text-slate-600 font-medium">{item.label}</span>
-                                       <span className="text-slate-400">{pct.toFixed(1)}% ({item.val.toFixed(1)} km)</span>
+                {/* Terrain Breakdown (Dynamic) */}
+                {currentSlopeBreakdown && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm print:break-inside-avoid">
+                       <div className="flex justify-between items-center mb-4">
+                           <h3 className="font-semibold text-slate-700 text-sm uppercase tracking-wide">Terrain Slope Analysis</h3>
+                           <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded-full">Smoothed</span>
+                       </div>
+                       <div className="space-y-3">
+                           {[
+                               { label: 'Extreme Down', color: 'bg-blue-600', val: currentSlopeBreakdown.steepDown },
+                               { label: 'Mod. Down', color: 'bg-blue-500', val: currentSlopeBreakdown.moderateDown },
+                               { label: 'Mild Down', color: 'bg-blue-400', val: currentSlopeBreakdown.mildDown },
+                               { label: 'Flat (<2%)', color: 'bg-emerald-400', val: currentSlopeBreakdown.flat },
+                               { label: 'Mild Up', color: 'bg-orange-400', val: currentSlopeBreakdown.mildUp },
+                               { label: 'Mod. Up', color: 'bg-orange-500', val: currentSlopeBreakdown.moderateUp },
+                               { label: 'Extreme Up', color: 'bg-red-500', val: currentSlopeBreakdown.steepUp },
+                           ].filter(i => i.val > 0).map((item, i) => { 
+                               const pct = ((item.val / stats.totalDistance) * 100);
+                               return (
+                                   <div key={i}>
+                                       <div className="flex justify-between text-xs mb-1">
+                                           <span className="text-slate-600 font-medium">{item.label}</span>
+                                           <span className="text-slate-400">{pct.toFixed(1)}% ({item.val.toFixed(1)} km)</span>
+                                       </div>
+                                       <div className="w-full bg-slate-100 rounded-full h-2">
+                                           <div 
+                                            className={`h-2 rounded-full ${item.color} print:print-color-adjust-exact`} 
+                                            style={{ width: `${pct}%` }}
+                                           ></div>
+                                       </div>
                                    </div>
-                                   <div className="w-full bg-slate-100 rounded-full h-2">
-                                       <div 
-                                        className={`h-2 rounded-full ${item.color} print:print-color-adjust-exact`} 
-                                        style={{ width: `${pct}%` }}
-                                       ></div>
-                                   </div>
-                               </div>
-                           )
-                       })}
-                   </div>
-                </div>
+                               )
+                           })}
+                       </div>
+                    </div>
+                )}
 
               </div>
 
               {/* Visuals Column */}
               <div className="lg:col-span-2 space-y-6 order-1 lg:order-2 print:col-span-1">
                 <div className="print:hidden">
-                    <MapDisplay points={stats.points} />
+                    <MapDisplay 
+                        points={stats.points} 
+                        hoveredPoint={hoveredPoint} 
+                        onHoverPoint={setHoveredPoint} 
+                    />
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-1">
@@ -428,7 +450,7 @@ const App: React.FC = () => {
                                         <p className="text-xs font-bold text-slate-700">{weather.precipitation}<span className="text-[10px] font-normal">mm</span></p>
                                         <p className="text-[10px] text-slate-400">Volume</p>
                                      </div>
-                                     {/* UV / Humidity (Replaced Humidity with UV for balance, moved Humidity below) */}
+                                     {/* UV */}
                                      <div className="text-center p-2 bg-slate-50 rounded-lg">
                                          <Sun size={16} className="text-slate-400 mx-auto mb-1" />
                                          <p className="text-xs font-bold text-slate-700">{weather.uvIndex.toFixed(1)}</p>
@@ -472,25 +494,42 @@ const App: React.FC = () => {
                                         <Zap size={18} />
                                         Difficulty Score
                                     </h3>
-                                    <span className={`text-sm font-mono px-3 py-1 bg-white rounded-lg shadow-sm ${difficulty.textColor} font-bold`}>
-                                        {difficulty.score.toFixed(1)} pts
-                                    </span>
+                                    <div className="flex flex-col items-end">
+                                        <span className={`text-sm font-mono px-3 py-1 bg-white rounded-lg shadow-sm ${difficulty.textColor} font-bold`}>
+                                            {difficulty.score.toFixed(1)} pts
+                                        </span>
+                                    </div>
                                 </div>
                                 
                                 <p className={`text-3xl font-extrabold ${difficulty.textColor} mb-2`}>{difficulty.label}</p>
-                                <p className={`text-sm ${difficulty.textColor} opacity-90 leading-relaxed font-medium`}>
+                                <p className={`text-sm ${difficulty.textColor} opacity-90 leading-relaxed font-medium mb-3`}>
                                     {difficulty.description}
                                 </p>
+
+                                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/60 ${difficulty.textColor} text-xs font-bold`}>
+                                    <MapPin size={12} />
+                                    {difficulty.details}
+                                </div>
                             </div>
                             
-                            <div className="mt-4 pt-4 border-t border-black/5 text-xs opacity-75 italic text-slate-600">
-                                Calculated using distance + elevation effort points (Shenandoah Scale).
+                            <div className="mt-4 pt-4 border-t border-black/5 flex flex-col gap-1">
+                                <span className={`text-xs font-bold uppercase tracking-wide ${difficulty.textColor} opacity-80`}>Energy Equivalent</span>
+                                <p className={`text-sm ${difficulty.textColor}`}>
+                                    Feels like walking <span className="font-bold">{difficulty.equivalentFlatKm.toFixed(1)} km</span> on flat ground.
+                                </p>
                             </div>
                         </div>
                     )}
                 </div>
 
-                <ElevationProfile points={stats.points} />
+                <ElevationProfile 
+                    rawPoints={stats.points}
+                    smoothedPoints={smoothedPoints}
+                    smoothingLevel={smoothingLevel}
+                    setSmoothingLevel={setSmoothingLevel}
+                    hoveredPoint={hoveredPoint} 
+                    onHoverPoint={setHoveredPoint} 
+                />
                 
               </div>
               
@@ -507,11 +546,9 @@ const App: React.FC = () => {
             Always carry a physical map, compass, and appropriate gear.
           </p>
           <div className="flex justify-center items-center space-x-4 text-xs font-medium text-slate-500">
-            <span>TrekkingTime Pro v1.2</span>
+            <span>TrekkingTime Pro v1.5</span>
             <span>•</span>
             <span>Local Processing (Privacy Focused)</span>
-            <span>•</span>
-            <a href="#" className="hover:text-orange-500 transition-colors">Documentation</a>
           </div>
         </div>
       </footer>

@@ -1,4 +1,5 @@
-# TrekkingTime Pro
+
+# TrekkingTime Pro v1.5
 
 **TrekkingTime Pro** is an advanced, client-side web application designed for hikers, mountaineers, and trail runners. It analyzes GPX files to provide accurate route statistics, elevation visualizations, and time estimates based on multiple scientific algorithms.
 
@@ -12,10 +13,13 @@
     *   **Petzoldt's Energy Mile**: Energy-expenditure based estimation.
 *   **Smart Aggregation**: Automatically detects outliers in the algorithms and suggests a "Smart Estimate" (Mean vs. Median).
 *   **Interactive Visualizations**:
-    *   **Map**: 4 Layer styles (Topographic, Satellite, Standard, CyclOSM).
-    *   **Elevation Profile**: Interactive chart with slope-based color gradients (Green=Flat, Red=Steep) and smoothing toggle.
+    *   **Map**: 4 Layer styles (Topographic, Satellite, Standard, CyclOSM) with bi-directional chart synchronization.
+    *   **Elevation Profile**: Robust interactive chart with slope-based color gradients (Green=Flat, Red=Steep) and 3-level smoothing (Raw, Smooth, Ultra).
 *   **Weather Forecast**: Integrated Open-Meteo API to fetch detailed weather data (Temp, Wind, Rain, Cloud Cover, Pressure, UV) for the specific route location and date.
-*   **Difficulty Scoring**: Auto-calculates a "Hiking Grade" (Easy to Extreme) based on distance and elevation gain.
+*   **Difficulty Scoring**: Auto-calculates a "Hiking Grade" (Easy to Extreme) based on distance and elevation gain, including route characteristic tags (e.g., "Steep Start").
+*   **Safety & Bio-Metrics**: 
+    *   Calculates Calories burned and Water requirements.
+    *   Checks Finish Time against Sunset to warn about night hiking.
 *   **Customizable Profile**: Adjusts calculations based on your Fitness Level, Pace Style, and Pack Weight.
 
 ## 🛠️ Technology Stack

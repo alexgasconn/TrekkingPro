@@ -1,5 +1,5 @@
 
-import { CalculationContext, FitnessLevel, PaceType, PackWeight, TimeEstimation, DifficultyRating, SmartAggregate, BioMetrics, SafetyMetrics } from '../types';
+import { CalculationContext, FitnessLevel, PaceType, PackWeight, TimeEstimation, DifficultyRating, SmartAggregate, BioMetrics, SafetyMetrics, RouteStats } from '../types';
 import { calculateDistance } from './geoUtils';
 
 // 1. Calculate Base Speed based on Fitness
@@ -89,7 +89,12 @@ export const calculateTobler = (ctx: CalculationContext): TimeEstimation => {
     const slope = eleDiff / (dist * 1000); 
 
     // V = 6 * e^(-3.5 * |m + 0.05|)
-    const velocity = 6 * Math.exp(-3.5 * Math.abs(slope + 0.05)); 
+    let velocity = 6 * Math.exp(-3.5 * Math.abs(slope + 0.05)); 
+    
+    // Safety clamp: If slope is extreme (GPS noise), velocity can drop near zero, causing infinite time.
+    // We enforce a minimum crawling speed of 0.5 km/h to handle noisy data.
+    if (velocity < 0.5) velocity = 0.5;
+
     totalHours += (dist / velocity);
   }
 
@@ -201,31 +206,74 @@ export const formatDuration = (minutes: number): string => {
 };
 
 // --- DIFFICULTY CALCULATOR ---
-export const calculateDifficulty = (dist: number, gain: number): DifficultyRating => {
-  const effortPoints = dist + (gain / 100);
+
+const analyzeRoute = (stats: RouteStats): string => {
+  const characteristics: string[] = [];
+
+  // 1. Check for High Altitude
+  if (stats.maxElevation > 2500) characteristics.push("High Altitude");
+  else if (stats.maxElevation > 1500) characteristics.push("Alpine");
+
+  // 2. Check for Steep Start (First 15% of dist has > 20% of gain)
+  const startDistIdx = Math.floor(stats.points.length * 0.15);
+  if (startDistIdx > 0 && stats.points.length > startDistIdx) {
+    const startGain = stats.points[startDistIdx].ele - stats.points[0].ele;
+    if (startGain > stats.elevationGain * 0.25) {
+      characteristics.push("Steep Start");
+    }
+  }
+
+  // 3. Check for Uphill Finish
+  const endDistIdx = Math.floor(stats.points.length * 0.85);
+  if (endDistIdx < stats.points.length) {
+    const endGain = stats.points[stats.points.length - 1].ele - stats.points[endDistIdx].ele;
+    if (endGain > 150) {
+      characteristics.push("Uphill Finish");
+    }
+  }
+
+  // 4. Slope characteristics
+  const steepPercent = (stats.slopeBreakdown.steepUp + stats.slopeBreakdown.steepDown) / stats.totalDistance;
+  if (steepPercent > 0.3) characteristics.push("Technical/Steep");
   
+  const flatPercent = stats.slopeBreakdown.flat / stats.totalDistance;
+  if (flatPercent > 0.6) characteristics.push("Mostly Flat");
+
+  if (characteristics.length === 0) return "Varied Terrain";
+  return characteristics.slice(0, 2).join(" & ");
+}
+
+export const calculateDifficulty = (stats: RouteStats): DifficultyRating => {
+  const dist = stats.totalDistance;
+  const gain = stats.elevationGain;
+  
+  const effortPoints = dist + (gain / 100);
+  const equivalentFlatKm = dist + (gain / 100);
+  const details = analyzeRoute(stats);
+
+  // Expanded thresholds to be less pessimistic
   if (effortPoints < 5) {
-    return { score: effortPoints, label: 'Very Easy', color: 'bg-emerald-100 border-emerald-200', textColor: 'text-emerald-700', description: 'Suitable for families and beginners.' };
-  } else if (effortPoints < 10) {
-    return { score: effortPoints, label: 'Easy', color: 'bg-green-100 border-green-200', textColor: 'text-green-700', description: 'Pleasant walk, minor hills.' };
-  } else if (effortPoints < 15) {
-    return { score: effortPoints, label: 'Moderate', color: 'bg-blue-100 border-blue-200', textColor: 'text-blue-700', description: 'Standard day hike, some fitness required.' };
-  } else if (effortPoints < 20) {
-    return { score: effortPoints, label: 'Hard', color: 'bg-orange-100 border-orange-200', textColor: 'text-orange-700', description: 'Challenging, good fitness required.' };
-  } else if (effortPoints < 30) {
-    return { score: effortPoints, label: 'Very Hard', color: 'bg-red-100 border-red-200', textColor: 'text-red-700', description: 'Strenuous, steep, long duration.' };
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Very Easy', color: 'bg-emerald-100 border-emerald-200', textColor: 'text-emerald-700', description: 'Brief walk, suitable for all.' };
+  } else if (effortPoints < 8) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Easy', color: 'bg-green-100 border-green-200', textColor: 'text-green-700', description: 'Pleasant hike, manageable hills.' };
+  } else if (effortPoints < 12) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Moderate', color: 'bg-blue-100 border-blue-200', textColor: 'text-blue-700', description: 'Standard half-day hike.' };
+  } else if (effortPoints < 18) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Challenging', color: 'bg-indigo-100 border-indigo-200', textColor: 'text-indigo-700', description: 'Good fitness required, long day.' };
+  } else if (effortPoints < 25) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Hard', color: 'bg-orange-100 border-orange-200', textColor: 'text-orange-700', description: 'Strenuous, steep sections.' };
+  } else if (effortPoints < 35) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Demanding', color: 'bg-amber-100 border-amber-200', textColor: 'text-amber-700', description: 'Very tough, physical endurance test.' };
+  } else if (effortPoints < 45) {
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Strenuous', color: 'bg-rose-100 border-rose-200', textColor: 'text-rose-700', description: 'Near-limit for day hiking.' };
   } else {
-    return { score: effortPoints, label: 'Extreme', color: 'bg-slate-800 border-slate-600', textColor: 'text-slate-100', description: 'Expedition level or ultra-distance.' };
+    return { score: effortPoints, equivalentFlatKm, details, label: 'Extreme', color: 'bg-slate-800 border-slate-600', textColor: 'text-slate-100', description: 'Expedition level or ultra-distance.' };
   }
 };
 
 // --- BIO METRICS (Calories & Water) ---
 export const calculateBioMetrics = (ctx: CalculationContext, durationMinutes: number, tempC?: number): BioMetrics => {
     // 1. Calories (Simplified Pandolf / ACSM estimation)
-    // Base Burn (Walking ~4km/h) ~ 3.5 METs
-    // Weight load factor: Light +0, Med +5kg, Heavy +10kg
-    // Grade factor incorporated via Elevation Gain logic
-    
     // Assume average hiker weight 75kg
     const bodyWeight = 75; 
     let loadWeight = 0;
@@ -235,30 +283,25 @@ export const calculateBioMetrics = (ctx: CalculationContext, durationMinutes: nu
     const totalWeight = bodyWeight + loadWeight;
     const hours = durationMinutes / 60;
     
-    // Base METs for flat hiking based on Pace
+    // Base METs
     let mets = 3.5; 
     if (ctx.pace === PaceType.FAST) mets = 5.0;
     if (ctx.pace === PaceType.TRAIL_RUN) mets = 8.0;
 
-    // Add METs for slope (rough approx: +1 MET per 3% grade, but we use gain)
-    // Avg Grade %
+    // Add METs for slope
     const avgGrade = (ctx.stats.elevationGain / (ctx.stats.totalDistance * 1000)) * 100;
-    mets += (avgGrade * 0.3); // Add effort for average grade
+    mets += (avgGrade * 0.3);
 
     const calories = Math.round(mets * totalWeight * hours);
 
     // 2. Water
-    // Base: 0.5L per hour
     let waterRate = 0.5;
-    
-    // Temp adjustment
     if (tempC) {
         if (tempC > 20) waterRate += 0.2;
         if (tempC > 28) waterRate += 0.3;
-        if (tempC > 35) waterRate += 0.2; // Extra
+        if (tempC > 35) waterRate += 0.2;
     }
     
-    // Effort adjustment
     if (ctx.pace === PaceType.FAST || ctx.pace === PaceType.TRAIL_RUN) waterRate += 0.2;
     if (avgGrade > 8) waterRate += 0.1;
 
@@ -281,8 +324,6 @@ export const calculateSafety = (startTime: string, durationMinutes: number, suns
 
     if (sunsetStr) {
         sunsetTime = new Date(sunsetStr);
-        // Normalize sunset date to today to match the generic "start time" which defaults to today
-        // Note: This assumes the user is planning for the same date as the weather fetched
         const userDate = start.getDate();
         sunsetTime.setDate(userDate);
         

@@ -8,11 +8,13 @@ export interface GPXPoint {
 }
 
 export interface SlopeBreakdown {
-  flat: number; // km < 2%
-  mild: number; // km 2-8%
-  moderate: number; // km 8-15%
-  steep: number; // km 15-25%
-  extreme: number; // km > 25%
+  steepDown: number; // < -15%
+  moderateDown: number; // -15 to -8%
+  mildDown: number; // -8 to -2%
+  flat: number; // -2 to 2%
+  mildUp: number; // 2 to 8%
+  moderateUp: number; // 8 to 15%
+  steepUp: number; // > 15%
 }
 
 export interface RouteStats {
@@ -73,6 +75,8 @@ export interface DifficultyRating {
   color: string;
   textColor: string;
   description: string;
+  equivalentFlatKm: number;
+  details: string; // Specific route characteristics
 }
 
 export interface WeatherData {

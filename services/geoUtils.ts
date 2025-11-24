@@ -1,4 +1,5 @@
-import { GPXPoint, RouteStats } from '../types';
+
+import { GPXPoint, RouteStats, SlopeBreakdown } from '../types';
 
 // Haversine formula to calculate distance between two lat/lon points in km
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -15,6 +16,96 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
 
 const deg2rad = (deg: number): number => {
   return deg * (Math.PI / 180);
+};
+
+// Helper to calculate slope stats from a set of points
+export const calculateSlopeBreakdown = (points: GPXPoint[], totalDistance: number): SlopeBreakdown => {
+    const slopeDist = {
+        steepDown: 0,
+        moderateDown: 0,
+        mildDown: 0,
+        flat: 0,
+        mildUp: 0,
+        moderateUp: 0,
+        steepUp: 0
+    };
+
+    for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const dist = curr.distFromStart - prev.distFromStart;
+        
+        if (dist > 0) {
+            // Use the pre-calculated slope if available, otherwise calc on fly
+            let slopeVal = curr.slope;
+            if (slopeVal === undefined) {
+                 const eleDiff = curr.ele - prev.ele;
+                 slopeVal = (eleDiff / (dist * 1000)) * 100;
+            }
+
+            if (Math.abs(slopeVal) < 2) {
+                slopeDist.flat += dist;
+            } else if (slopeVal >= 2) {
+                if (slopeVal < 8) slopeDist.mildUp += dist;
+                else if (slopeVal < 15) slopeDist.moderateUp += dist;
+                else slopeDist.steepUp += dist;
+            } else {
+                if (slopeVal > -8) slopeDist.mildDown += dist;
+                else if (slopeVal > -15) slopeDist.moderateDown += dist;
+                else slopeDist.steepDown += dist;
+            }
+        }
+    }
+
+    return {
+        flat: parseFloat(slopeDist.flat.toFixed(2)),
+        mildUp: parseFloat(slopeDist.mildUp.toFixed(2)),
+        moderateUp: parseFloat(slopeDist.moderateUp.toFixed(2)),
+        steepUp: parseFloat(slopeDist.steepUp.toFixed(2)),
+        mildDown: parseFloat(slopeDist.mildDown.toFixed(2)),
+        moderateDown: parseFloat(slopeDist.moderateDown.toFixed(2)),
+        steepDown: parseFloat(slopeDist.steepDown.toFixed(2)),
+    };
+};
+
+// Smoothing Logic
+export const smoothGPXPoints = (points: GPXPoint[], level: number): GPXPoint[] => {
+    // Downsample first to improve performance and remove micro-noise
+    // Target roughly 800-1000 points for the chart
+    const targetPoints = 1000;
+    const step = Math.max(1, Math.ceil(points.length / targetPoints));
+    
+    const downsampled = points.filter((_, i) => i % step === 0).map((p, i, arr) => {
+         let slope = 0;
+         if (i > 0) {
+            const prev = arr[i-1];
+            const dist = calculateDistance(prev.lat, prev.lon, p.lat, p.lon);
+            const eleDiff = p.ele - prev.ele;
+            if (dist > 0.001) {
+                slope = (eleDiff / (dist * 1000)) * 100;
+            }
+         }
+         return { ...p, slope };
+    });
+
+    if (level === 0) return downsampled;
+
+    let windowSize = 3;
+    if (level === 1) windowSize = 5;   // Low
+    if (level === 2) windowSize = 15;  // Med
+    if (level === 3) windowSize = 40;  // High
+    if (level === 4) windowSize = 80;  // Max
+
+    return downsampled.map((point, idx, arr) => {
+        const start = Math.max(0, idx - Math.floor(windowSize / 2));
+        const end = Math.min(arr.length, idx + Math.floor(windowSize / 2) + 1);
+        const subset = arr.slice(start, end);
+        
+        const avgEle = subset.reduce((sum, p) => sum + p.ele, 0) / subset.length;
+        const avgSlope = subset.reduce((sum, p) => sum + (p.slope || 0), 0) / subset.length;
+        
+        return { ...point, ele: avgEle, slope: avgSlope };
+    });
 };
 
 export const parseGPX = (gpxContent: string): RouteStats => {
@@ -34,14 +125,6 @@ export const parseGPX = (gpxContent: string): RouteStats => {
   let totalSlopeAccumulator = 0;
   let slopeCount = 0;
 
-  const slopeDist = {
-    flat: 0,
-    mild: 0,
-    moderate: 0,
-    steep: 0,
-    extreme: 0
-  };
-
   const points: GPXPoint[] = [];
 
   for (let i = 0; i < trkpts.length; i++) {
@@ -54,7 +137,8 @@ export const parseGPX = (gpxContent: string): RouteStats => {
     if (ele < minElevation) minElevation = ele;
 
     let distFromPrev = 0;
-    
+    let slopeVal = 0;
+
     if (i > 0) {
       const prev = points[i - 1];
       distFromPrev = calculateDistance(prev.lat, prev.lon, lat, lon);
@@ -62,7 +146,6 @@ export const parseGPX = (gpxContent: string): RouteStats => {
 
       const eleDiff = ele - prev.ele;
       
-      // Filter small noise in elevation data (threshold 0.5 meter)
       if (Math.abs(eleDiff) > 0.5) {
           if (eleDiff > 0) {
             elevationGain += eleDiff;
@@ -71,21 +154,10 @@ export const parseGPX = (gpxContent: string): RouteStats => {
           }
       }
 
-      // Calculate slope for this segment
-      if (distFromPrev > 0.001) { // avoid division by zero
-        const slopeVal = Math.abs((eleDiff / (distFromPrev * 1000)) * 100); // percentage
-        totalSlopeAccumulator += slopeVal;
+      if (distFromPrev > 0.001) {
+        slopeVal = (eleDiff / (distFromPrev * 1000)) * 100;
+        totalSlopeAccumulator += Math.abs(slopeVal);
         slopeCount++;
-
-        // Categorize terrain by slope
-        if (slopeVal < 2) slopeDist.flat += distFromPrev;
-        else if (slopeVal < 8) slopeDist.mild += distFromPrev;
-        else if (slopeVal < 15) slopeDist.moderate += distFromPrev;
-        else if (slopeVal < 25) slopeDist.steep += distFromPrev;
-        else slopeDist.extreme += distFromPrev;
-      } else {
-        // If distance is tiny, assume flat/continuity
-        slopeDist.flat += distFromPrev;
       }
     }
 
@@ -94,8 +166,12 @@ export const parseGPX = (gpxContent: string): RouteStats => {
       lon,
       ele,
       distFromStart: parseFloat(totalDistance.toFixed(3)),
+      slope: slopeVal
     });
   }
+
+  // Calculate initial raw stats
+  const slopeBreakdown = calculateSlopeBreakdown(points, totalDistance);
 
   return {
     totalDistance: parseFloat(totalDistance.toFixed(2)),
@@ -105,12 +181,6 @@ export const parseGPX = (gpxContent: string): RouteStats => {
     minElevation: Math.round(minElevation),
     avgSlope: slopeCount > 0 ? (totalSlopeAccumulator / slopeCount) : 0,
     points,
-    slopeBreakdown: {
-      flat: parseFloat(slopeDist.flat.toFixed(2)),
-      mild: parseFloat(slopeDist.mild.toFixed(2)),
-      moderate: parseFloat(slopeDist.moderate.toFixed(2)),
-      steep: parseFloat(slopeDist.steep.toFixed(2)),
-      extreme: parseFloat(slopeDist.extreme.toFixed(2)),
-    }
+    slopeBreakdown
   };
 };
