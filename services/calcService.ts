@@ -31,7 +31,7 @@ const getPaceMultiplier = (pace: PaceType): number => {
   }
 };
 
-const getCalculatedSpeed = (ctx: CalculationContext): number => {
+export const getCalculatedSpeed = (ctx: CalculationContext): number => {
   let speed = getFitnessBaseSpeed(ctx.fitness);
   speed *= getPaceMultiplier(ctx.pace);
   

@@ -12,13 +12,31 @@ import {
   formatDuration, 
   calculateDifficulty, 
   calculateBioMetrics, 
-  calculateSafety 
+  calculateSafety,
+  getCalculatedSpeed
 } from './services/calcService';
-import { fetchWeatherForecast } from './services/weatherService';
+import { fetchWeatherForecast, isSevereWeather } from './services/weatherService';
 import { RouteStats, FitnessLevel, PaceType, PackWeight, CalculationContext, TimeEstimation, DifficultyRating, WeatherData, SmartAggregate, BioMetrics, SafetyMetrics, GPXPoint, SlopeBreakdown } from './types';
 import StatsCards from './components/StatsCards';
 import MapDisplay from './components/MapDisplay';
 import ElevationProfile from './components/ElevationProfile';
+
+// dd/mm/yyyy formatter, independent of browser locale
+const formatDateDMY = (isoDate: string): string => {
+  const [y, m, d] = isoDate.split('-');
+  if (!y || !m || !d) return isoDate;
+  return `${d}/${m}/${y}`;
+};
+
+const FITNESS_DESCRIPTIONS: Record<FitnessLevel, string> = {
+  [FitnessLevel.SEDENTARY]: 'Poca o ninguna actividad física habitual.',
+  [FitnessLevel.BEGINNER]: 'Camina de forma ocasional, condición básica.',
+  [FitnessLevel.AVERAGE]: 'Actividad física regular, senderista estándar.',
+  [FitnessLevel.ATHLETIC]: 'Buena forma física, entrena con frecuencia.',
+  [FitnessLevel.ENDURANCE]: 'Alta resistencia, tipo corredor de maratón.',
+  [FitnessLevel.ELITE]: 'Forma física excelente, nivel alpinista profesional.',
+  [FitnessLevel.SUPER_HUMAN]: 'Nivel excepcional, ritmo de porteador sherpa.'
+};
 
 const App: React.FC = () => {
   const [stats, setStats] = useState<RouteStats | null>(null);
@@ -79,6 +97,14 @@ const App: React.FC = () => {
     
     return { smoothedPoints: smoothed, currentSlopeBreakdown: slopeStats };
   }, [stats, smoothingLevel]);
+
+  // Estimated flat-ground pace/speed for the current fitness+pace+weight combo
+  const currentSpeed = useMemo(() => {
+    if (!stats) return 0;
+    return getCalculatedSpeed({ stats, fitness, pace, weight, includeBreaks });
+  }, [stats, fitness, pace, weight, includeBreaks]);
+
+  const badWeather = weather ? isSevereWeather(weather) : false;
 
   // Fetch Weather when stats or date changes
   useEffect(() => {
@@ -223,6 +249,7 @@ const App: React.FC = () => {
                                 onChange={(e) => setSelectedDate(e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 text-slate-700 py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
                             />
+                            <p className="text-[10px] text-slate-400 mt-1">{formatDateDMY(selectedDate)}</p>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Start Time</label>
@@ -246,10 +273,16 @@ const App: React.FC = () => {
                           <option key={l} value={l}>{l}</option>
                         ))}
                       </select>
+                      <p className="text-[10px] text-slate-400 mt-1">{FITNESS_DESCRIPTIONS[fitness]}</p>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Pace / Style</label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Pace / Style</label>
+                        {currentSpeed > 0 && (
+                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">~{currentSpeed.toFixed(1)} km/h</span>
+                        )}
+                      </div>
                       <select 
                         value={pace}
                         onChange={(e) => setPace(e.target.value as PaceType)}
@@ -307,6 +340,13 @@ const App: React.FC = () => {
                                 <div className="mt-3 flex items-center justify-center gap-2 text-xs text-red-200 bg-red-900/40 p-2 rounded-lg border border-red-500/30 print:text-red-600 print:bg-red-50 print:border-red-200">
                                     <AlertTriangle size={14} />
                                     <span>Warning: Finish time is after sunset.</span>
+                                </div>
+                            )}
+
+                            {badWeather && (
+                                <div className="mt-3 flex items-center justify-center gap-2 text-xs text-red-200 bg-red-900/40 p-2 rounded-lg border border-red-500/30 print:text-red-600 print:bg-red-50 print:border-red-200">
+                                    <AlertTriangle size={14} />
+                                    <span>Warning: Poor weather conditions forecast.</span>
                                 </div>
                             )}
                         </div>

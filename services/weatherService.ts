@@ -21,6 +21,17 @@ const getWeatherDescription = (code: number): string => {
     return "Unknown";
 };
 
+// Flags potentially dangerous/uncomfortable hiking conditions (storms, heavy rain/snow, high wind, high precip chance)
+export const isSevereWeather = (weather: WeatherData): boolean => {
+    const isStormCode = weather.weatherCode >= 95; // Thunderstorm
+    const isHeavyPrecipCode = (weather.weatherCode >= 65 && weather.weatherCode <= 67) || (weather.weatherCode >= 82 && weather.weatherCode <= 86);
+    return isStormCode
+        || isHeavyPrecipCode
+        || weather.precipitationProbability >= 60
+        || weather.windGusts >= 50
+        || weather.windSpeed >= 40;
+};
+
 export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: string): Promise<WeatherData> => {
     try {
         // Fetch Daily + Hourly data
