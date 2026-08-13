@@ -37,9 +37,9 @@ export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: st
         // Fetch Daily + Hourly data
         // Added: precipitation_probability_max, hourly temperature/precip/wind for the hour-by-hour breakdown
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,uv_index_max,sunrise,sunset&hourly=temperature_2m,precipitation_probability,weathercode,windspeed_10m,pressure_msl,cloud_cover,relative_humidity_2m&timezone=auto&start_date=${dateStr}&end_date=${dateStr}`;
-        
+
         const response = await fetch(url);
-        
+
         if (!response.ok) {
             throw new Error("Failed to fetch weather data");
         }
@@ -54,10 +54,10 @@ export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: st
         const pressures = data.hourly.pressure_msl as number[];
         const clouds = data.hourly.cloud_cover as number[];
         const humidities = data.hourly.relative_humidity_2m as number[];
-        
-        const avgPressure = pressures.length ? Math.round(pressures.reduce((a,b) => a+b, 0) / pressures.length) : 1013;
-        const avgCloudCover = clouds.length ? Math.round(clouds.reduce((a,b) => a+b, 0) / clouds.length) : 0;
-        const avgHumidity = humidities.length ? Math.round(humidities.reduce((a,b) => a+b, 0) / humidities.length) : 50;
+
+        const avgPressure = pressures.length ? Math.round(pressures.reduce((a, b) => a + b, 0) / pressures.length) : 1013;
+        const avgCloudCover = clouds.length ? Math.round(clouds.reduce((a, b) => a + b, 0) / clouds.length) : 0;
+        const avgHumidity = humidities.length ? Math.round(humidities.reduce((a, b) => a + b, 0) / humidities.length) : 50;
 
         const weatherCode = data.daily.weathercode[0];
 

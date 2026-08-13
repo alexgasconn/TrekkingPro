@@ -34,18 +34,18 @@ const getPaceMultiplier = (pace: PaceType): number => {
 export const getCalculatedSpeed = (ctx: CalculationContext): number => {
   let speed = getFitnessBaseSpeed(ctx.fitness);
   speed *= getPaceMultiplier(ctx.pace);
-  
+
   // Langmuir correction for weight
   if (ctx.weight === PackWeight.MEDIUM) speed *= 0.95;
   if (ctx.weight === PackWeight.HEAVY) speed *= 0.85; // Heavier impact
-  
+
   return speed;
 };
 
 const applyBreaks = (minutes: number, ctx: CalculationContext): number => {
   const isRunning = ctx.pace === PaceType.TRAIL_RUN || ctx.pace === PaceType.SKY_RUN;
   if (!ctx.includeBreaks || isRunning) return minutes;
-  
+
   // General rule: 10 mins break per hour of hiking
   const hours = minutes / 60;
   const breakMinutes = Math.floor(hours) * 10;
@@ -57,11 +57,11 @@ const applyBreaks = (minutes: number, ctx: CalculationContext): number => {
 // 1. Naismith's Rule (Modified)
 export const calculateNaismith = (ctx: CalculationContext): TimeEstimation => {
   const speed = getCalculatedSpeed(ctx);
-  
+
   const timeDist = ctx.stats.totalDistance / speed; // hours
   const climbFactor = ctx.fitness === FitnessLevel.ELITE || ctx.fitness === FitnessLevel.SUPER_HUMAN ? 800 : 600;
-  const timeVert = ctx.stats.elevationGain / climbFactor; 
-  
+  const timeVert = ctx.stats.elevationGain / climbFactor;
+
   const totalMinutes = (timeDist + timeVert) * 60;
 
   return {
@@ -76,21 +76,21 @@ export const calculateTobler = (ctx: CalculationContext): TimeEstimation => {
   const points = ctx.stats.points;
   let totalHours = 0;
 
-  const userSpeed = getCalculatedSpeed(ctx); 
-  const scaleFactor = 6 / userSpeed; 
+  const userSpeed = getCalculatedSpeed(ctx);
+  const scaleFactor = 6 / userSpeed;
 
   for (let i = 1; i < points.length; i++) {
-    const p1 = points[i-1];
+    const p1 = points[i - 1];
     const p2 = points[i];
-    const dist = calculateDistance(p1.lat, p1.lon, p2.lat, p2.lon); 
+    const dist = calculateDistance(p1.lat, p1.lon, p2.lat, p2.lon);
     if (dist === 0) continue;
 
     const eleDiff = (p2.ele - p1.ele);
-    const slope = eleDiff / (dist * 1000); 
+    const slope = eleDiff / (dist * 1000);
 
     // V = 6 * e^(-3.5 * |m + 0.05|)
-    let velocity = 6 * Math.exp(-3.5 * Math.abs(slope + 0.05)); 
-    
+    let velocity = 6 * Math.exp(-3.5 * Math.abs(slope + 0.05));
+
     // Safety clamp: If slope is extreme (GPS noise), velocity can drop near zero, causing infinite time.
     // We enforce a minimum crawling speed of 0.5 km/h to handle noisy data.
     if (velocity < 0.5) velocity = 0.5;
@@ -108,21 +108,21 @@ export const calculateTobler = (ctx: CalculationContext): TimeEstimation => {
 
 // 3. Munter Method
 export const calculateMunter = (ctx: CalculationContext): TimeEstimation => {
-    const speed = getCalculatedSpeed(ctx);
-    const distUnits = ctx.stats.totalDistance;
-    const vertUnits = ctx.stats.elevationGain / 100; 
-    
-    let totalHours = (distUnits + vertUnits) / speed;
+  const speed = getCalculatedSpeed(ctx);
+  const distUnits = ctx.stats.totalDistance;
+  const vertUnits = ctx.stats.elevationGain / 100;
 
-    if (ctx.weight === PackWeight.HEAVY) {
-        totalHours += (ctx.stats.elevationLoss / 1000); 
-    }
-    
-    return {
-        method: "Munter Method",
-        timeMinutes: Math.round(applyBreaks(totalHours * 60, ctx)),
-        description: "Alpinism: Distance + Effort units calculation."
-    };
+  let totalHours = (distUnits + vertUnits) / speed;
+
+  if (ctx.weight === PackWeight.HEAVY) {
+    totalHours += (ctx.stats.elevationLoss / 1000);
+  }
+
+  return {
+    method: "Munter Method",
+    timeMinutes: Math.round(applyBreaks(totalHours * 60, ctx)),
+    description: "Alpinism: Distance + Effort units calculation."
+  };
 }
 
 // 4. Swiss Hiking Federation (DIN 33466)
@@ -130,7 +130,7 @@ export const calculateSwiss = (ctx: CalculationContext): TimeEstimation => {
   const speedFactor = getCalculatedSpeed(ctx) / 4.0; // 1.0 for average
 
   const t_horiz_hours = ctx.stats.totalDistance / (4.0 * speedFactor);
-  
+
   const t_up_hours = ctx.stats.elevationGain / (400 * speedFactor);
   const t_down_hours = ctx.stats.elevationLoss / (800 * speedFactor);
   const t_vert_hours = t_up_hours + t_down_hours;
@@ -155,7 +155,7 @@ export const calculatePetzoldt = (ctx: CalculationContext): TimeEstimation => {
   const energyKmFromGain = ctx.stats.elevationGain / 152.4;
 
   const totalEnergyKm = energyKmFromDist + energyKmFromGain;
-  
+
   const totalHours = totalEnergyKm / speed;
 
   return {
@@ -171,7 +171,7 @@ export const calculateSmartAggregate = (estimations: TimeEstimation[]): SmartAgg
   if (estimations.length === 0) return { val: 0, type: 'MEAN', reason: 'No data' };
 
   const values = estimations.map(e => e.timeMinutes).sort((a, b) => a - b);
-  
+
   // 1. Calculate Mean
   const sum = values.reduce((acc, curr) => acc + curr, 0);
   const mean = sum / values.length;
@@ -182,7 +182,7 @@ export const calculateSmartAggregate = (estimations: TimeEstimation[]): SmartAgg
 
   // 3. Check Deviation
   const diffPercent = Math.abs(mean - median) / median;
-  
+
   if (diffPercent > 0.10) {
     return {
       val: Math.round(median),
@@ -235,7 +235,7 @@ const analyzeRoute = (stats: RouteStats): string => {
   // 4. Slope characteristics
   const steepPercent = (stats.slopeBreakdown.steepUp + stats.slopeBreakdown.steepDown) / stats.totalDistance;
   if (steepPercent > 0.3) characteristics.push("Technical/Steep");
-  
+
   const flatPercent = stats.slopeBreakdown.flat / stats.totalDistance;
   if (flatPercent > 0.6) characteristics.push("Mostly Flat");
 
@@ -246,7 +246,7 @@ const analyzeRoute = (stats: RouteStats): string => {
 export const calculateDifficulty = (stats: RouteStats): DifficultyRating => {
   const dist = stats.totalDistance;
   const gain = stats.elevationGain;
-  
+
   const effortPoints = dist + (gain / 100);
   const equivalentFlatKm = dist + (gain / 100);
   const details = analyzeRoute(stats);
@@ -273,68 +273,68 @@ export const calculateDifficulty = (stats: RouteStats): DifficultyRating => {
 
 // --- BIO METRICS (Calories & Water) ---
 export const calculateBioMetrics = (ctx: CalculationContext, durationMinutes: number, tempC?: number): BioMetrics => {
-    // 1. Calories (Simplified Pandolf / ACSM estimation)
-    // Assume average hiker weight 75kg
-    const bodyWeight = 75; 
-    let loadWeight = 0;
-    if (ctx.weight === PackWeight.MEDIUM) loadWeight = 7;
-    if (ctx.weight === PackWeight.HEAVY) loadWeight = 15;
-    
-    const totalWeight = bodyWeight + loadWeight;
-    const hours = durationMinutes / 60;
-    
-    // Base METs
-    let mets = 3.5; 
-    if (ctx.pace === PaceType.FAST) mets = 5.0;
-    if (ctx.pace === PaceType.TRAIL_RUN) mets = 8.0;
+  // 1. Calories (Simplified Pandolf / ACSM estimation)
+  // Assume average hiker weight 75kg
+  const bodyWeight = 75;
+  let loadWeight = 0;
+  if (ctx.weight === PackWeight.MEDIUM) loadWeight = 7;
+  if (ctx.weight === PackWeight.HEAVY) loadWeight = 15;
 
-    // Add METs for slope
-    const avgGrade = (ctx.stats.elevationGain / (ctx.stats.totalDistance * 1000)) * 100;
-    mets += (avgGrade * 0.3);
+  const totalWeight = bodyWeight + loadWeight;
+  const hours = durationMinutes / 60;
 
-    const calories = Math.round(mets * totalWeight * hours);
+  // Base METs
+  let mets = 3.5;
+  if (ctx.pace === PaceType.FAST) mets = 5.0;
+  if (ctx.pace === PaceType.TRAIL_RUN) mets = 8.0;
 
-    // 2. Water
-    let waterRate = 0.5;
-    if (tempC) {
-        if (tempC > 20) waterRate += 0.2;
-        if (tempC > 28) waterRate += 0.3;
-        if (tempC > 35) waterRate += 0.2;
-    }
-    
-    if (ctx.pace === PaceType.FAST || ctx.pace === PaceType.TRAIL_RUN) waterRate += 0.2;
-    if (avgGrade > 8) waterRate += 0.1;
+  // Add METs for slope
+  const avgGrade = (ctx.stats.elevationGain / (ctx.stats.totalDistance * 1000)) * 100;
+  mets += (avgGrade * 0.3);
 
-    return {
-        calories,
-        water: parseFloat((waterRate * hours).toFixed(1))
-    };
+  const calories = Math.round(mets * totalWeight * hours);
+
+  // 2. Water
+  let waterRate = 0.5;
+  if (tempC) {
+    if (tempC > 20) waterRate += 0.2;
+    if (tempC > 28) waterRate += 0.3;
+    if (tempC > 35) waterRate += 0.2;
+  }
+
+  if (ctx.pace === PaceType.FAST || ctx.pace === PaceType.TRAIL_RUN) waterRate += 0.2;
+  if (avgGrade > 8) waterRate += 0.1;
+
+  return {
+    calories,
+    water: parseFloat((waterRate * hours).toFixed(1))
+  };
 };
 
 // --- SAFETY (Daylight) ---
 export const calculateSafety = (startTime: string, durationMinutes: number, sunsetStr?: string): SafetyMetrics => {
-    const [hours, mins] = startTime.split(':').map(Number);
-    const start = new Date();
-    start.setHours(hours, mins, 0, 0);
+  const [hours, mins] = startTime.split(':').map(Number);
+  const start = new Date();
+  start.setHours(hours, mins, 0, 0);
 
-    const finish = new Date(start.getTime() + durationMinutes * 60000);
-    
-    let isNightHiking = false;
-    let sunsetTime = null;
+  const finish = new Date(start.getTime() + durationMinutes * 60000);
 
-    if (sunsetStr) {
-        sunsetTime = new Date(sunsetStr);
-        const userDate = start.getDate();
-        sunsetTime.setDate(userDate);
-        
-        if (finish > sunsetTime) {
-            isNightHiking = true;
-        }
+  let isNightHiking = false;
+  let sunsetTime = null;
+
+  if (sunsetStr) {
+    sunsetTime = new Date(sunsetStr);
+    const userDate = start.getDate();
+    sunsetTime.setDate(userDate);
+
+    if (finish > sunsetTime) {
+      isNightHiking = true;
     }
+  }
 
-    return {
-        finishTime: finish,
-        sunsetTime,
-        isNightHiking
-    };
+  return {
+    finishTime: finish,
+    sunsetTime,
+    isNightHiking
+  };
 };

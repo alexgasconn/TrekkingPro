@@ -91,7 +91,7 @@ export interface WeatherData {
   date: string;
   maxTemp: number;
   minTemp: number;
-  feelsLikeMax: number; 
+  feelsLikeMax: number;
   precipitation: number; // mm
   precipitationProbability: number; // %
   weatherDescription: string; // Text summary
