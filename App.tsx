@@ -55,7 +55,6 @@ const App: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [showHourly, setShowHourly] = useState(false);
 
   const [estimations, setEstimations] = useState<TimeEstimation[]>([]);
   const [aggregate, setAggregate] = useState<SmartAggregate | null>(null);
@@ -124,14 +123,24 @@ const App: React.FC = () => {
     });
   }, [weather, selectedDate, startTime, aggregate]);
 
-  const getHourIcon = (code: number) => {
-    if (code === 0) return Sun;
-    if (code <= 2) return CloudSun;
-    if (code === 3) return Cloud;
-    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return Umbrella;
-    if (code >= 71 && code <= 86) return Droplets;
-    if (code >= 95) return Zap;
-    return Cloud;
+  // Weather icon + accent color per hour, so conditions read visually instead of via raw codes
+  const getHourWeatherVisual = (code: number): { Icon: typeof Sun; color: string } => {
+    if (code === 0) return { Icon: Sun, color: 'text-yellow-500' };
+    if (code <= 2) return { Icon: CloudSun, color: 'text-amber-400' };
+    if (code === 3) return { Icon: Cloud, color: 'text-slate-400' };
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { Icon: Umbrella, color: 'text-blue-500' };
+    if (code >= 71 && code <= 86) return { Icon: Droplets, color: 'text-cyan-400' };
+    if (code >= 95) return { Icon: Zap, color: 'text-purple-500' };
+    return { Icon: Cloud, color: 'text-slate-400' };
+  };
+
+  // Running pace as min:ss per km, for Trail Running / Sky Running styles
+  const formatPaceMinPerKm = (speedKmh: number): string => {
+    if (speedKmh <= 0) return '--:--';
+    const paceMinutes = 60 / speedKmh;
+    const min = Math.floor(paceMinutes);
+    const sec = Math.round((paceMinutes - min) * 60);
+    return `${min}:${sec.toString().padStart(2, '0')} min/km`;
   };
 
   // Fetch Weather when stats or date changes
@@ -311,9 +320,14 @@ const App: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Pace / Style</label>
-                        {currentSpeed > 0 && (
-                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">~{currentSpeed.toFixed(1)} km/h</span>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {currentSpeed > 0 && (
+                            <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">~{currentSpeed.toFixed(1)} km/h</span>
+                          )}
+                          {currentSpeed > 0 && (pace === PaceType.TRAIL_RUN || pace === PaceType.SKY_RUN) && (
+                            <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{formatPaceMinPerKm(currentSpeed)}</span>
+                          )}
+                        </div>
                       </div>
                       <select
                         value={pace}
@@ -459,39 +473,30 @@ const App: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-1">
-                  {/* Weather Widget */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm h-full">
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
-                      <div className="flex items-center gap-2 text-slate-700 font-semibold">
-                        <CloudSun size={20} className="text-blue-500" />
-                        <span>Weather Forecast</span>
-                      </div>
-                      {weather && weather.hourlyForecast.length > 0 && (
-                        <button
-                          onClick={() => setShowHourly(!showHourly)}
-                          className="text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-full flex items-center gap-1 transition-colors print:hidden"
-                        >
-                          <Clock size={12} />
-                          <span>{showHourly ? 'Hide Hourly' : 'Hourly'}</span>
-                        </button>
-                      )}
+                {/* Weather Widget - enlarged, full width, hourly always expanded */}
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold text-base">
+                      <CloudSun size={22} className="text-blue-500" />
+                      <span>Weather Forecast</span>
                     </div>
+                  </div>
 
-                    {weatherLoading && (
-                      <div className="flex justify-center items-center h-40 text-sm text-slate-400 animate-pulse">
-                        Fetching comprehensive forecast...
-                      </div>
-                    )}
+                  {weatherLoading && (
+                    <div className="flex justify-center items-center h-40 text-sm text-slate-400 animate-pulse">
+                      Fetching comprehensive forecast...
+                    </div>
+                  )}
 
-                    {weatherError && !weatherLoading && (
-                      <div className="flex justify-center items-center h-40 text-xs text-red-400 text-center px-4 bg-red-50 rounded-lg">
-                        {weatherError}
-                      </div>
-                    )}
+                  {weatherError && !weatherLoading && (
+                    <div className="flex justify-center items-center h-40 text-xs text-red-400 text-center px-4 bg-red-50 rounded-lg">
+                      {weatherError}
+                    </div>
+                  )}
 
-                    {weather && !weatherLoading && (
-                      <div className="space-y-4">
+                  {weather && !weatherLoading && (
+                    <div className="space-y-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Top Row: Main Temp and Sky */}
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3">
@@ -518,7 +523,7 @@ const App: React.FC = () => {
                         </div>
 
                         {/* Detailed Grid */}
-                        <div className="grid grid-cols-3 gap-y-4 gap-x-2 pt-2">
+                        <div className="grid grid-cols-3 gap-y-4 gap-x-2">
                           {/* Wind */}
                           <div className="text-center p-2 bg-slate-50 rounded-lg">
                             <Wind size={16} className="text-slate-400 mx-auto mb-1" />
@@ -562,73 +567,78 @@ const App: React.FC = () => {
                             </div>
                           </div>
                         </div>
+                      </div>
 
-                        {showHourly && (
-                          <div className="pt-3 border-t border-slate-100">
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mb-2">
-                              Hour-by-hour during your hike ({startTime}{safety ? ` → ${safety.finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''})
-                            </p>
-                            {tripHourlyForecast.length === 0 ? (
-                              <p className="text-xs text-slate-400 text-center py-3">No hourly data available for this time range.</p>
-                            ) : (
-                              <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                                {tripHourlyForecast.map((hourEntry, idx) => {
-                                  const Icon = getHourIcon(hourEntry.weatherCode);
-                                  return (
-                                    <div key={idx} className="flex flex-col items-center shrink-0 bg-slate-50 rounded-lg p-2 min-w-[64px]">
-                                      <span className="text-[10px] text-slate-500 font-semibold">
-                                        {new Date(hourEntry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                      </span>
-                                      <Icon size={16} className="text-blue-500 my-1" />
-                                      <span className="text-xs font-bold text-slate-700">{Math.round(hourEntry.temp)}°</span>
-                                      <span className="text-[10px] text-slate-400">{hourEntry.precipitationProbability}%</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                      {/* Hourly Breakdown - expanded by default, icon + precipitation bar first, numbers secondary */}
+                      <div className="pt-4 border-t border-slate-100">
+                        <p className="text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-3">
+                          Hour-by-hour during your hike ({startTime}{safety ? ` → ${safety.finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''})
+                        </p>
+                        {tripHourlyForecast.length === 0 ? (
+                          <p className="text-xs text-slate-400 text-center py-3">No hourly data available for this time range.</p>
+                        ) : (
+                          <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                            {tripHourlyForecast.map((hourEntry, idx) => {
+                              const { Icon, color } = getHourWeatherVisual(hourEntry.weatherCode);
+                              return (
+                                <div key={idx} className="flex flex-col items-center shrink-0 bg-slate-50 rounded-xl p-3 min-w-[84px]">
+                                  <span className="text-xs text-slate-500 font-bold">
+                                    {new Date(hourEntry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                  </span>
+                                  <Icon size={32} className={`${color} my-2`} />
+                                  <span className="text-base font-bold text-slate-800">{Math.round(hourEntry.temp)}°</span>
+                                  <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-2">
+                                    <div
+                                      className="h-full bg-blue-500"
+                                      style={{ width: `${hourEntry.precipitationProbability}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 mt-1">{hourEntry.precipitationProbability}%</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Difficulty Details */}
-                  {difficulty && (
-                    <div className={`p-5 rounded-xl border ${difficulty.color} shadow-sm flex flex-col justify-between h-full bg-opacity-50`}>
-                      <div>
-                        <div className="flex justify-between items-start mb-4">
-                          <h3 className={`font-bold ${difficulty.textColor} flex items-center gap-2`}>
-                            <Zap size={18} />
-                            Difficulty Score
-                          </h3>
-                          <div className="flex flex-col items-end">
-                            <span className={`text-sm font-mono px-3 py-1 bg-white rounded-lg shadow-sm ${difficulty.textColor} font-bold`}>
-                              {difficulty.score.toFixed(1)} pts
-                            </span>
-                          </div>
-                        </div>
-
-                        <p className={`text-3xl font-extrabold ${difficulty.textColor} mb-2`}>{difficulty.label}</p>
-                        <p className={`text-sm ${difficulty.textColor} opacity-90 leading-relaxed font-medium mb-3`}>
-                          {difficulty.description}
-                        </p>
-
-                        <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/60 ${difficulty.textColor} text-xs font-bold`}>
-                          <MapPin size={12} />
-                          {difficulty.details}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 pt-4 border-t border-black/5 flex flex-col gap-1">
-                        <span className={`text-xs font-bold uppercase tracking-wide ${difficulty.textColor} opacity-80`}>Energy Equivalent</span>
-                        <p className={`text-sm ${difficulty.textColor}`}>
-                          Feels like walking <span className="font-bold">{difficulty.equivalentFlatKm.toFixed(1)} km</span> on flat ground.
-                        </p>
                       </div>
                     </div>
                   )}
                 </div>
+
+                {/* Difficulty Details */}
+                {difficulty && (
+                  <div className={`p-5 rounded-xl border ${difficulty.color} shadow-sm flex flex-col justify-between bg-opacity-50`}>
+                    <div>
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className={`font-bold ${difficulty.textColor} flex items-center gap-2`}>
+                          <Zap size={18} />
+                          Difficulty Score
+                        </h3>
+                        <div className="flex flex-col items-end">
+                          <span className={`text-sm font-mono px-3 py-1 bg-white rounded-lg shadow-sm ${difficulty.textColor} font-bold`}>
+                            {difficulty.score.toFixed(1)} pts
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className={`text-3xl font-extrabold ${difficulty.textColor} mb-2`}>{difficulty.label}</p>
+                      <p className={`text-sm ${difficulty.textColor} opacity-90 leading-relaxed font-medium mb-3`}>
+                        {difficulty.description}
+                      </p>
+
+                      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/60 ${difficulty.textColor} text-xs font-bold`}>
+                        <MapPin size={12} />
+                        {difficulty.details}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-black/5 flex flex-col gap-1">
+                      <span className={`text-xs font-bold uppercase tracking-wide ${difficulty.textColor} opacity-80`}>Energy Equivalent</span>
+                      <p className={`text-sm ${difficulty.textColor}`}>
+                        Feels like walking <span className="font-bold">{difficulty.equivalentFlatKm.toFixed(1)} km</span> on flat ground.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <ElevationProfile
                   rawPoints={stats.points}
