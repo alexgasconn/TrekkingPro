@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Upload, Clock, Settings, AlertCircle, Calculator, CloudSun, Calendar, Thermometer, Wind, Droplets, Trophy, Gauge, Cloud, Sun, Sunrise, Sunset, Eye, Zap, Waves, Flame, Droplet, AlertTriangle, Umbrella, MapPin } from 'lucide-react';
+import { Upload, Clock, Settings, AlertCircle, Calculator, CloudSun, Calendar, Thermometer, Wind, Droplets, Trophy, Gauge, Cloud, Sun, Sunrise, Sunset, Eye, Zap, Waves, Flame, Droplet, AlertTriangle, Umbrella, MapPin, Pencil } from 'lucide-react';
 import { parseGPX, smoothGPXPoints, calculateSlopeBreakdown } from './services/geoUtils';
 import { 
   calculateNaismith, 
@@ -29,13 +29,13 @@ const formatDateDMY = (isoDate: string): string => {
 };
 
 const FITNESS_DESCRIPTIONS: Record<FitnessLevel, string> = {
-  [FitnessLevel.SEDENTARY]: 'Poca o ninguna actividad física habitual.',
-  [FitnessLevel.BEGINNER]: 'Camina de forma ocasional, condición básica.',
-  [FitnessLevel.AVERAGE]: 'Actividad física regular, senderista estándar.',
-  [FitnessLevel.ATHLETIC]: 'Buena forma física, entrena con frecuencia.',
-  [FitnessLevel.ENDURANCE]: 'Alta resistencia, tipo corredor de maratón.',
-  [FitnessLevel.ELITE]: 'Forma física excelente, nivel alpinista profesional.',
-  [FitnessLevel.SUPER_HUMAN]: 'Nivel excepcional, ritmo de porteador sherpa.'
+  [FitnessLevel.SEDENTARY]: 'Little to no regular activity, easy flat pace (~2.5 km/h).',
+  [FitnessLevel.BEGINNER]: 'Occasional walker, comfortable basic pace (~3.2 km/h).',
+  [FitnessLevel.AVERAGE]: 'Regular activity, standard trail pace (~4.0 km/h).',
+  [FitnessLevel.ATHLETIC]: 'Trains frequently, brisk sustained pace (~5.0 km/h).',
+  [FitnessLevel.ENDURANCE]: 'High endurance athlete, marathon-level pace (~5.5 km/h).',
+  [FitnessLevel.ELITE]: 'Professional alpinist fitness, very fast pace (~6.0 km/h).',
+  [FitnessLevel.SUPER_HUMAN]: 'Exceptional Sherpa-level fitness, elite pace (~7.0 km/h).'
 };
 
 const App: React.FC = () => {
@@ -213,6 +213,10 @@ const App: React.FC = () => {
                 )}
               </div>
               <div className="flex gap-2">
+                  <a href="https://gpx-master.vercel.app/" target="_blank" rel="noopener noreferrer" className="cursor-pointer text-sm text-slate-600 font-medium hover:text-slate-800 flex items-center space-x-1 bg-white border border-slate-200 px-3 py-1 rounded-full transition-colors">
+                    <Pencil size={14} />
+                    <span>Edit Route</span>
+                  </a>
                   <button onClick={() => window.print()} className="cursor-pointer text-sm text-slate-600 font-medium hover:text-slate-800 flex items-center space-x-1 bg-white border border-slate-200 px-3 py-1 rounded-full transition-colors">
                     <Settings size={14} />
                     <span>Print Report</span>

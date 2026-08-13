@@ -1,5 +1,5 @@
 
-import { WeatherData } from "../types";
+import { WeatherData, HourlyForecast } from "../types";
 
 // WMO Weather interpretation codes (Simplified for UI)
 const getWeatherDescription = (code: number): string => {
@@ -35,8 +35,8 @@ export const isSevereWeather = (weather: WeatherData): boolean => {
 export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: string): Promise<WeatherData> => {
     try {
         // Fetch Daily + Hourly data
-        // Added: precipitation_probability_max
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,uv_index_max,sunrise,sunset&hourly=pressure_msl,cloud_cover,relative_humidity_2m&timezone=auto&start_date=${dateStr}&end_date=${dateStr}`;
+        // Added: precipitation_probability_max, hourly temperature/precip/wind for the hour-by-hour breakdown
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,uv_index_max,sunrise,sunset&hourly=temperature_2m,precipitation_probability,weathercode,windspeed_10m,pressure_msl,cloud_cover,relative_humidity_2m&timezone=auto&start_date=${dateStr}&end_date=${dateStr}`;
         
         const response = await fetch(url);
         
@@ -61,6 +61,20 @@ export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: st
 
         const weatherCode = data.daily.weathercode[0];
 
+        const hourlyTimes = data.hourly.time as string[];
+        const hourlyTemps = data.hourly.temperature_2m as number[];
+        const hourlyPrecipProb = data.hourly.precipitation_probability as number[];
+        const hourlyCodes = data.hourly.weathercode as number[];
+        const hourlyWind = data.hourly.windspeed_10m as number[];
+
+        const hourlyForecast: HourlyForecast[] = hourlyTimes.map((time, i) => ({
+            time,
+            temp: hourlyTemps[i],
+            precipitationProbability: hourlyPrecipProb[i],
+            weatherCode: hourlyCodes[i],
+            windSpeed: hourlyWind[i]
+        }));
+
         // Return the first (and only) day requested
         return {
             date: dateStr,
@@ -78,7 +92,8 @@ export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: st
             sunset: data.daily.sunset[0],
             pressure: avgPressure,
             cloudCover: avgCloudCover,
-            humidity: avgHumidity
+            humidity: avgHumidity,
+            hourlyForecast
         };
 
     } catch (error) {
@@ -86,3 +101,5 @@ export const fetchWeatherForecast = async (lat: number, lon: number, dateStr: st
         throw error;
     }
 };
+
+export { getWeatherDescription };

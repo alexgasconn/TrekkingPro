@@ -79,6 +79,14 @@ export interface DifficultyRating {
   details: string; // Specific route characteristics
 }
 
+export interface HourlyForecast {
+  time: string; // ISO datetime
+  temp: number; // Celsius
+  precipitationProbability: number; // %
+  weatherCode: number;
+  windSpeed: number; // km/h
+}
+
 export interface WeatherData {
   date: string;
   maxTemp: number;
@@ -96,6 +104,7 @@ export interface WeatherData {
   uvIndex: number;
   sunrise: string;
   sunset: string;
+  hourlyForecast: HourlyForecast[];
 }
 
 export interface SmartAggregate {
