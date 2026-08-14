@@ -1,5 +1,5 @@
 
-import { CalculationContext, FitnessLevel, PaceType, PackWeight, TimeEstimation, DifficultyRating, SmartAggregate, BioMetrics, SafetyMetrics, RouteStats } from '../types';
+import { CalculationContext, FitnessLevel, PaceType, PackWeight, TimeEstimation, DifficultyRating, SmartAggregate, BioMetrics, SafetyMetrics, RouteStats, GPXPoint } from '../types';
 import { calculateDistance } from './geoUtils';
 
 // 1. Calculate Base Speed based on Fitness
@@ -107,8 +107,7 @@ export const calculateTobler = (ctx: CalculationContext): TimeEstimation => {
 };
 
 // 3. Munter Method
-export const calculateMunter = (ctx: CalculationContext): TimeEstimation => {
-  const speed = getCalculatedSpeed(ctx);
+export const calculateMunter = (ctx: CalculationContext): TimeEstimation => {  const speed = getCalculatedSpeed(ctx);
   const distUnits = ctx.stats.totalDistance;
   const vertUnits = ctx.stats.elevationGain / 100;
 
@@ -337,4 +336,32 @@ export const calculateSafety = (startTime: string, durationMinutes: number, suns
     sunsetTime,
     isNightHiking
   };
+};
+
+// --- ROUTE TIMELINE ---
+// Cumulative minutes elapsed at each GPX point, using slope-aware (Tobler) pacing
+// normalised so the last point matches the aggregated total duration.
+export const calculateRouteTimeline = (points: GPXPoint[], totalMinutes: number): number[] => {
+  if (points.length === 0) return [];
+
+  const cumulative: number[] = [0];
+  let rawTotal = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const p1 = points[i - 1];
+    const p2 = points[i];
+    const dist = calculateDistance(p1.lat, p1.lon, p2.lat, p2.lon);
+
+    if (dist > 0) {
+      const slope = (p2.ele - p1.ele) / (dist * 1000);
+      const velocity = Math.max(6 * Math.exp(-3.5 * Math.abs(slope + 0.05)), 0.5);
+      rawTotal += dist / velocity;
+    }
+    cumulative.push(rawTotal);
+  }
+
+  if (rawTotal === 0) return cumulative.map(() => 0);
+
+  const scale = totalMinutes / rawTotal;
+  return cumulative.map(v => v * scale);
 };

@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Popup, LayersControl, CircleMarker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { GPXPoint } from '../types';
+import { GPXPoint, RouteWeatherPoint } from '../types';
 
 // Fix for default Leaflet markers in React
 const iconPerson = new L.Icon({
@@ -80,9 +80,22 @@ interface MapDisplayProps {
   points: GPXPoint[];
   hoveredPoint: GPXPoint | null;
   onHoverPoint: (point: GPXPoint | null) => void;
+  weatherPoints?: RouteWeatherPoint[];
 }
 
-const MapDisplay: React.FC<MapDisplayProps> = ({ points, hoveredPoint, onHoverPoint }) => {
+const makeWeatherIcon = (wp: RouteWeatherPoint) => L.divIcon({
+  className: '',
+  html: `<div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);">
+           <div style="background:#ffffff;border:2px solid #3b82f6;border-radius:9999px;padding:2px 6px;box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:16px;line-height:1.2;white-space:nowrap;">
+             ${wp.emoji}<span style="font-size:10px;font-weight:700;color:#1e293b;margin-left:2px;">${Math.round(wp.temp)}°</span>
+           </div>
+           <div style="font-size:9px;font-weight:700;color:#1e293b;background:rgba(255,255,255,.85);border-radius:4px;padding:0 3px;margin-top:1px;">${wp.clockTime}</div>
+         </div>`,
+  iconSize: [0, 0],
+  iconAnchor: [0, 0]
+});
+
+const MapDisplay: React.FC<MapDisplayProps> = ({ points, hoveredPoint, onHoverPoint, weatherPoints = [] }) => {
   const positions = useMemo(() => 
     points.map(p => [p.lat, p.lon] as [number, number]), 
   [points]);
@@ -151,6 +164,25 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ points, hoveredPoint, onHoverPo
                 pathOptions={{ color: 'white', fillColor: '#ef4444', fillOpacity: 1, weight: 3 }} 
             />
         )}
+
+        {weatherPoints.map((wp, i) => (
+            <Marker key={`wx-${i}`} position={[wp.lat, wp.lon]} icon={makeWeatherIcon(wp)}>
+                <Popup>
+                    <div style={{ minWidth: 170 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                            {wp.emoji} {wp.clockTime} – {wp.description}
+                        </div>
+                        <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                            <div>Temperature: <b>{Math.round(wp.temp)}°C</b></div>
+                            <div>Rain chance: <b>{wp.precipitationProbability}%</b></div>
+                            <div>Wind: <b>{Math.round(wp.windSpeed)} km/h</b></div>
+                            <div>Distance: <b>{wp.distFromStart.toFixed(1)} km</b> • Altitude: <b>{Math.round(wp.ele)} m</b></div>
+                            <div>Elapsed: <b>{Math.floor(wp.elapsedMinutes / 60)}h {Math.round(wp.elapsedMinutes % 60)}m</b></div>
+                        </div>
+                    </div>
+                </Popup>
+            </Marker>
+        ))}
 
         <RecenterMap positions={positions} />
       </MapContainer>

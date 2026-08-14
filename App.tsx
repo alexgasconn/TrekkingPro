@@ -13,10 +13,11 @@ import {
   calculateDifficulty,
   calculateBioMetrics,
   calculateSafety,
-  getCalculatedSpeed
+  getCalculatedSpeed,
+  calculateRouteTimeline
 } from './services/calcService';
-import { fetchWeatherForecast, isSevereWeather } from './services/weatherService';
-import { RouteStats, FitnessLevel, PaceType, PackWeight, CalculationContext, TimeEstimation, DifficultyRating, WeatherData, SmartAggregate, BioMetrics, SafetyMetrics, GPXPoint, SlopeBreakdown, HourlyForecast } from './types';
+import { fetchWeatherForecast, isSevereWeather, getWeatherDescription } from './services/weatherService';
+import { RouteStats, FitnessLevel, PaceType, PackWeight, CalculationContext, TimeEstimation, DifficultyRating, WeatherData, SmartAggregate, BioMetrics, SafetyMetrics, GPXPoint, SlopeBreakdown, HourlyForecast, RouteWeatherPoint } from './types';
 import StatsCards from './components/StatsCards';
 import MapDisplay from './components/MapDisplay';
 import ElevationProfile from './components/ElevationProfile';
@@ -26,6 +27,13 @@ const formatDateDMY = (isoDate: string): string => {
   const [y, m, d] = isoDate.split('-');
   if (!y || !m || !d) return isoDate;
   return `${d}/${m}/${y}`;
+};
+
+// Builds a local Date from "YYYY-MM-DD" + "HH:mm" (new Date(isoDate) would parse as UTC and shift the day)
+const toLocalDateTime = (isoDate: string, time: string): Date => {
+  const [y, mo, d] = isoDate.split('-').map(Number);
+  const [h, mi] = time.split(':').map(Number);
+  return new Date(y, mo - 1, d, h, mi, 0, 0);
 };
 
 const FITNESS_DESCRIPTIONS: Record<FitnessLevel, string> = {
@@ -55,6 +63,7 @@ const App: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [showRouteWeather, setShowRouteWeather] = useState(false);
 
   const [estimations, setEstimations] = useState<TimeEstimation[]>([]);
   const [aggregate, setAggregate] = useState<SmartAggregate | null>(null);
@@ -110,9 +119,7 @@ const App: React.FC = () => {
   const tripHourlyForecast = useMemo(() => {
     if (!weather || !weather.hourlyForecast || !aggregate) return [];
 
-    const [h, m] = startTime.split(':').map(Number);
-    const start = new Date(selectedDate);
-    start.setHours(h, m, 0, 0);
+    const start = toLocalDateTime(selectedDate, startTime);
     const startFloor = new Date(start);
     startFloor.setMinutes(0, 0, 0);
     const finish = new Date(start.getTime() + aggregate.val * 60000);
@@ -142,6 +149,56 @@ const App: React.FC = () => {
     const sec = Math.round((paceMinutes - min) * 60);
     return `${min}:${sec.toString().padStart(2, '0')} min/km`;
   };
+
+  const getWeatherEmoji = (code: number): string => {
+    if (code === 0) return '☀️';
+    if (code <= 2) return '🌤️';
+    if (code === 3) return '☁️';
+    if (code === 45 || code === 48) return '🌫️';
+    if (code >= 51 && code <= 57) return '🌦️';
+    if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return '🌧️';
+    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return '🌨️';
+    if (code >= 95) return '⛈️';
+    return '☁️';
+  };
+
+  // Pin each hourly forecast to the route position the hiker should reach at that time
+  const routeWeatherPoints = useMemo<RouteWeatherPoint[]>(() => {
+    if (!stats || !aggregate || tripHourlyForecast.length === 0) return [];
+
+    const timeline = calculateRouteTimeline(stats.points, aggregate.val);
+    if (timeline.length === 0) return [];
+
+    const start = toLocalDateTime(selectedDate, startTime);
+
+    const result: RouteWeatherPoint[] = [];
+
+    tripHourlyForecast.forEach((entry: HourlyForecast) => {
+      const elapsedMinutes = (new Date(entry.time).getTime() - start.getTime()) / 60000;
+      if (elapsedMinutes < 0 || elapsedMinutes > aggregate.val) return;
+
+      let idx = timeline.findIndex(t => t >= elapsedMinutes);
+      if (idx === -1) idx = timeline.length - 1;
+
+      const p = stats.points[idx];
+      result.push({
+        lat: p.lat,
+        lon: p.lon,
+        ele: p.ele,
+        distFromStart: p.distFromStart,
+        clockTime: new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+        elapsedMinutes,
+        temp: entry.temp,
+        precipitationProbability: entry.precipitationProbability,
+        windSpeed: entry.windSpeed,
+        weatherCode: entry.weatherCode,
+        description: getWeatherDescription(entry.weatherCode),
+        emoji: getWeatherEmoji(entry.weatherCode)
+      });
+    });
+
+    return result;
+  }, [stats, aggregate, tripHourlyForecast, startTime, selectedDate]);
 
   // Fetch Weather when stats or date changes
   useEffect(() => {
@@ -465,12 +522,22 @@ const App: React.FC = () => {
 
               {/* Visuals Column */}
               <div className="lg:col-span-2 space-y-6 order-1 lg:order-2 print:col-span-1">
-                <div className="print:hidden">
+                <div className="print:hidden relative">
                   <MapDisplay
                     points={stats.points}
                     hoveredPoint={hoveredPoint}
                     onHoverPoint={setHoveredPoint}
+                    weatherPoints={showRouteWeather ? routeWeatherPoints : []}
                   />
+                  {routeWeatherPoints.length > 0 && (
+                    <button
+                      onClick={() => setShowRouteWeather(!showRouteWeather)}
+                      className={`absolute top-3 left-3 z-[1000] text-xs font-bold px-3 py-2 rounded-full shadow-md flex items-center gap-1.5 transition-colors ${showRouteWeather ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'}`}
+                    >
+                      <CloudSun size={14} />
+                      <span>{showRouteWeather ? 'Hide Weather on Route' : 'Show Weather on Route'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Weather Widget - enlarged, full width, hourly always expanded */}

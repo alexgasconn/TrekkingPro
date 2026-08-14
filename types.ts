@@ -107,8 +107,7 @@ export interface WeatherData {
   hourlyForecast: HourlyForecast[];
 }
 
-export interface SmartAggregate {
-  val: number;
+export interface SmartAggregate {  val: number;
   type: 'MEAN' | 'MEDIAN';
   reason: string;
 }
@@ -123,4 +122,20 @@ export interface SafetyMetrics {
   sunsetTime: Date | null;
   isNightHiking: boolean;
   hoursOfDaylightRemaining?: number;
+}
+
+// Forecast pinned to the route position where the hiker is expected to be at that hour
+export interface RouteWeatherPoint {
+  lat: number;
+  lon: number;
+  ele: number;
+  distFromStart: number; // km
+  clockTime: string; // HH:mm
+  elapsedMinutes: number;
+  temp: number;
+  precipitationProbability: number;
+  windSpeed: number;
+  weatherCode: number;
+  description: string;
+  emoji: string;
 }
